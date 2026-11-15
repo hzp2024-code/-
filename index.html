@@ -1,0 +1,381 @@
+<!-- 
+  Context: HTML5 / ES6 JavaScript, single-file bundle, Mobile Web (Chrome/Safari iOS 15+)
+  APIs used: 
+  - Fullscreen API: *Gotcha: Requires an explicit user gesture (touchstart/click) to trigger; calling requestFullscreen() on page load throws a TypeError.*
+  - Vibration API: *Gotcha: navigator.vibrate() fails silently on iOS Safari WebKit and requires prior DOM tap on Android.*
+  - History API: *Gotcha: Back-button trapping via pushState only engages after direct DOM interaction.*
+-->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Вам валентинка 💌</title>
+    <style>
+        :root {
+            --bg-pink: #4a001f;
+            --text-main: #ffffff;
+            --accent-pink: #ff3385;
+            --accent-light: #ff99c2;
+            --panel-bg: #1f000d;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+        body, html {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #0d0006;
+            font-family: 'Courier New', Courier, monospace;
+            color: var(--text-main);
+        }
+        /* Экран-приманка */
+        #gesture-trap-layer {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle, #2b0012 0%, #0d0006 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            cursor: pointer;
+            padding: 20px;
+        }
+        .trap-card {
+            background: rgba(255, 51, 133, 0.1);
+            border: 1px solid var(--accent-pink);
+            border-radius: 16px;
+            padding: 30px 20px;
+            text-align: center;
+            box-shadow: 0 0 25px rgba(255, 51, 133, 0.25);
+        }
+        .trap-button {
+            background: linear-gradient(45deg, #ff1a75, #ff66a3);
+            color: #fff;
+            padding: 16px 36px;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: 700;
+            border: none;
+            margin-top: 20px;
+            box-shadow: 0 4px 15px rgba(255, 26, 117, 0.5);
+            animation: bounce 1.2s infinite alternate;
+        }
+        @keyframes bounce {
+            0% { transform: scale(1); }
+            100% { transform: scale(1.06); }
+        }
+        /* Сам экран любовного локера */
+        #prank-viewport {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background-color: var(--bg-pink);
+            padding: 16px;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 1000;
+            animation: pulse-love 1.2s infinite alternate;
+        }
+        @keyframes pulse-love {
+            0% { background-color: #380017; }
+            100% { background-color: #70002e; }
+        }
+        .header-banner {
+            border: 2px solid var(--accent-pink);
+            background: var(--panel-bg);
+            padding: 12px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 0 15px rgba(255, 51, 133, 0.4);
+        }
+        .header-banner h1 {
+            color: var(--accent-light);
+            font-size: 19px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .console-log {
+            background: rgba(15, 0, 7, 0.9);
+            border: 1px solid var(--accent-pink);
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 12px;
+            line-height: 1.45;
+            color: var(--accent-light);
+            height: 28vh;
+            overflow: hidden;
+        }
+        .timer-box {
+            text-align: center;
+            font-size: 38px;
+            font-weight: bold;
+            color: #ffffff;
+            text-shadow: 0 0 12px var(--accent-pink);
+        }
+        .keypad-container {
+            background: var(--panel-bg);
+            border: 1px solid var(--accent-pink);
+            padding: 12px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .pin-display {
+            width: 100%;
+            background: #0a0004;
+            border: 1px solid var(--accent-pink);
+            color: var(--accent-light);
+            font-size: 22px;
+            padding: 8px;
+            text-align: center;
+            margin-bottom: 10px;
+            letter-spacing: 6px;
+            min-height: 44px;
+            border-radius: 6px;
+        }
+        .keypad-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        .key-btn {
+            background: #330015;
+            border: 1px solid #66002b;
+            color: #fff;
+            padding: 12px 0;
+            font-size: 19px;
+            font-weight: bold;
+            border-radius: 6px;
+        }
+        .key-btn:active {
+            background: var(--accent-pink);
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Слой 1: Приманка -->
+    <div id="gesture-trap-layer">
+        <div class="trap-card">
+            <div style="font-size: 48px; margin-bottom: 10px;">💌</div>
+            <h2 style="color: #fff; font-size: 20px; margin-bottom: 8px;">Тебе пришло секретное сообщение!</h2>
+            <p style="color: #ff99c2; font-size: 14px;">Нажми на кнопку ниже, чтобы прочитать</p>
+            <button class="trap-button">Открыть ❤️</button>
+        </div>
+    </div>
+
+    <!-- Слой 2: Экран "Любовного Локера" -->
+    <div id="prank-viewport">
+        <div class="header-banner">
+            <h1>💓 ВНИМАНИЕ! ТЕЛЕФОН ЗАХВАЧЕН 💓</h1>
+            <p style="font-size: 12px; margin-top: 4px; color: #ffccd9;">Обнаружен критический уровень милоты владелицы</p>
+        </div>
+
+        <div class="console-log" id="terminal-output">
+            [ЛЮБОВЬ] Инициализация обнимашек... ОК<br>
+            [СКАНЕР] Проверка владелицы телефона... Самая красивая девочка найдена 💖<br>
+            [СИСТЕМА] Блокировка всех грустных мыслей... УСПЕШНО<br>
+        </div>
+
+        <div>
+            <p style="text-align: center; font-size: 11px; margin-bottom: 4px; color: #ff99c2;">
+                ВРЕМЯ ДО ПРИНУДИТЕЛЬНОГО ЗАЦЕЛОВЫВАНИЯ:
+            </p>
+            <div class="timer-box" id="countdown-display">00:05:00:00</div>
+        </div>
+
+        <div class="keypad-container">
+            <p style="font-size: 12px; margin-bottom: 8px; color: #ffccd9;">
+                Штраф для разблокировки: <b>100 поцелуев</b> или пин-код (Подсказка: <b>143</b>)
+            </p>
+            <div class="pin-display" id="pin-screen"></div>
+            <div class="keypad-grid" id="keypad">
+                <button class="key-btn" data-val="1">1</button>
+                <button class="key-btn" data-val="2">2</button>
+                <button class="key-btn" data-val="3">3</button>
+                <button class="key-btn" data-val="4">4</button>
+                <button class="key-btn" data-val="5">5</button>
+                <button class="key-btn" data-val="6">6</button>
+                <button class="key-btn" data-val="7">7</button>
+                <button class="key-btn" data-val="8">8</button>
+                <button class="key-btn" data-val="9">9</button>
+                <button class="key-btn" data-val="CLR" style="color: #ff6666;">C</button>
+                <button class="key-btn" data-val="0">0</button>
+                <button class="key-btn" data-val="OK" style="color: #66ff99;">💖</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Component: RomanticLockerEngine
+         * Purpose: Executes fullscreen romance prank, heart-beat vibration patterns, and PIN validation.
+         * Inputs: DOM Touch/Click events.
+         * Outputs: DOM mutations, Web Audio sine synthesis, Fullscreen state lock.
+         */
+        const UNLOCK_PIN = "143"; // 143 = I Love You
+        let currentPinInput = "";
+        let isPrankActive = false;
+        let audioCtx = null;
+        let countdownSeconds = 300; // 5 минут
+
+        const trapLayer = document.getElementById('gesture-trap-layer');
+        const prankViewport = document.getElementById('prank-viewport');
+        const terminalOutput = document.getElementById('terminal-output');
+        const pinScreen = document.getElementById('pin-screen');
+        const countdownDisplay = document.getElementById('countdown-display');
+
+        // Мягкий звук при нажатиях через Web Audio API
+        function triggerLoveTone(freq = 660, durationMs = 100) {
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + durationMs / 1000);
+            } catch (err) {}
+        }
+
+        function requestDeviceFullscreen() {
+            const docEl = document.documentElement;
+            const requestMethod = docEl.requestFullscreen || 
+                                  docEl.webkitRequestFullscreen || 
+                                  docEl.mozRequestFullScreen || 
+                                  docEl.msRequestFullscreen;
+            if (requestMethod) {
+                requestMethod.call(docEl).catch(() => {});
+            }
+        }
+
+        // Ловушка на кнопку "Назад"
+        function armHistoryTrap() {
+            window.history.pushState({ locked: true }, null, window.location.href);
+            window.addEventListener('popstate', () => {
+                if (isPrankActive) {
+                    window.history.pushState({ locked: true }, null, window.location.href);
+                    requestDeviceFullscreen();
+                    triggerLoveTone(520, 180);
+                    if (navigator.vibrate) navigator.vibrate([150, 80, 150]);
+                    terminalOutput.innerHTML += `[ОШИБКА] Куда это мы пытаемся сбежать? Сбежать от моей любви нельзя! 💞<br>`;
+                    terminalOutput.scrollTop = terminalOutput.scrollHeight;
+                }
+            });
+        }
+
+        // Лог с угрозами любовью
+        function startLoveTerminalLogs() {
+            const loveLogs = [
+                "Загрузка 10 000 гигабайт поцелуев в память телефона... 💋",
+                "Удаление всех других парней из контактов... УСПЕШНО 💕",
+                "Установка твоей улыбки как главного вируса в моём сердечке... 💖",
+                "Внимание! Вы слишком милая, система не выдерживает! 💓",
+                "Шифрование галереи... Теперь там только котики и сердечки 😻",
+                "Блокировка плохого настроения на 999 лет... 💞",
+                "Отправка координат для срочной доставки обнимашек... 🚀",
+                "Я люблю тебя! И телефон не отдам, пока не улыбнешься! ❤️"
+            ];
+            let idx = 0;
+            setInterval(() => {
+                if (!isPrankActive) return;
+                const line = loveLogs[idx % loveLogs.length];
+                terminalOutput.innerHTML += `[LOVE] ${line}<br>`;
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+                idx++;
+            }, 1100);
+        }
+
+        function startCountdownTimer() {
+            setInterval(() => {
+                if (!isPrankActive || countdownSeconds <= 0) return;
+                countdownSeconds--;
+                const mins = String(Math.floor(countdownSeconds / 60)).padStart(2, '0');
+                const secs = String(countdownSeconds % 60).padStart(2, '0');
+                const ms = String(Math.floor(Math.random() * 99)).padStart(2, '0');
+                countdownDisplay.textContent = `00:${mins}:${secs}:${ms}`;
+            }, 100);
+        }
+
+        trapLayer.addEventListener('click', () => {
+            isPrankActive = true;
+            trapLayer.style.display = 'none';
+            prankViewport.style.display = 'flex';
+
+            requestDeviceFullscreen();
+            armHistoryTrap();
+            startLoveTerminalLogs();
+            startCountdownTimer();
+            triggerLoveTone(784, 200);
+
+            // Вибрация в ритме биения сердца
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200, 400, 200, 100, 200]);
+            }
+        });
+
+        document.addEventListener('touchstart', () => {
+            if (isPrankActive && !document.fullscreenElement) {
+                requestDeviceFullscreen();
+            }
+        }, { passive: false });
+
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        document.addEventListener('touchmove', e => {
+            if (isPrankActive) e.preventDefault();
+        }, { passive: false });
+
+        document.getElementById('keypad').addEventListener('click', (e) => {
+            const btn = e.target.closest('.key-btn');
+            if (!btn) return;
+
+            const val = btn.dataset.val;
+            triggerLoveTone(880, 60);
+            if (navigator.vibrate) navigator.vibrate(35);
+
+            if (val === 'CLR') {
+                currentPinInput = "";
+                pinScreen.textContent = "";
+            } else if (val === 'OK') {
+                if (currentPinInput === UNLOCK_PIN) {
+                    isPrankActive = false;
+                    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+                    document.body.innerHTML = `
+                        <div style="display:flex; flex-direction:column; height:100vh; align-items:center; justify-content:center; background:#2b0012; color:#fff; font-family:sans-serif; text-align:center; padding:25px;">
+                            <div style="font-size:70px; margin-bottom:15px;">💖🥰💖</div>
+                            <h1 style="color:#ff66a3; margin-bottom:12px;">ТЕЛЕФОН РАЗБЛОКИРОВАН!</h1>
+                            <p style="font-size:18px; line-height:1.5;">Я тебя очень сильно люблю, ты самая лучшая! 💓<br><br><span style="font-size:14px; color:#ff99c2;">(Но 100 поцелуев с тебя всё равно причитается 😘)</span></p>
+                        </div>`;
+                } else {
+                    pinScreen.textContent = "МАЛО ЛЮБВИ!";
+                    triggerLoveTone(330, 300);
+                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                    setTimeout(() => {
+                        currentPinInput = "";
+                        pinScreen.textContent = "";
+                    }, 900);
+                }
+            } else {
+                if (currentPinInput.length < 6) {
+                    currentPinInput += val;
+                    pinScreen.textContent = currentPinInput;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
